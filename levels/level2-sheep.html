@@ -1,0 +1,424 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>第二關｜綿羊剪剪樂</title>
+<script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+<style>
+  :root{--green:#3f7d3a;--cream:#fff8e7;--brown:#6b4423;--orange:#f08a24;}
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%;overflow:hidden;background:#2f4a2a;font-family:"PingFang TC","Noto Sans TC",system-ui,sans-serif;color:#222;user-select:none;-webkit-user-select:none}
+  #cam{position:fixed;inset:0;width:100%;height:100%;object-fit:cover;z-index:0}
+  a-scene{position:fixed!important;inset:0;width:100%!important;height:100%!important;z-index:1}
+
+  .screen{position:fixed;inset:0;z-index:10;display:none;flex-direction:column;align-items:center;justify-content:center;padding:24px;text-align:center;background:linear-gradient(#bfe3a8,#7cc06a)}
+  .screen.active{display:flex}
+  .card{background:var(--cream);border-radius:20px;padding:22px 20px;max-width:360px;width:100%;box-shadow:0 8px 24px rgba(0,0,0,.18)}
+  h1{margin:0 0 6px;font-size:22px;color:var(--brown)}
+  .big{font-size:42px;font-weight:800;color:var(--green);margin:10px 0}
+  .muted{color:#666;font-size:14px}
+  button{border:0;border-radius:999px;padding:14px 26px;font-size:17px;font-weight:700;background:var(--orange);color:#fff;margin-top:14px;cursor:pointer}
+  button.ghost{background:transparent;color:var(--brown);border:2px dashed var(--brown);font-size:13px;padding:8px 14px}
+  .mimi{font-size:64px}
+  .bubble{background:#fff;border-radius:16px;padding:14px;margin-top:8px;text-align:left;line-height:1.6}
+  .fact{background:#fdf0d5;border-radius:14px;padding:12px;margin-top:12px;text-align:left;font-size:14px;line-height:1.6}
+
+  /* AR HUD */
+  #hud{position:fixed;inset:0;z-index:5;pointer-events:none;display:none}
+  #hud.active{display:block}
+  #counter{position:absolute;top:calc(14px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);background:rgba(255,248,231,.92);padding:8px 18px;border-radius:999px;font-weight:800;font-size:18px;color:var(--brown);white-space:nowrap}
+  #hint{position:absolute;bottom:calc(28px + env(safe-area-inset-bottom));left:16px;right:16px;text-align:center;background:rgba(0,0,0,.55);color:#fff;padding:12px;border-radius:14px;font-size:15px}
+  #scissors{position:fixed;z-index:6;font-size:40px;pointer-events:none;transform:translate(-50%,-50%) rotate(-30deg);display:none;filter:drop-shadow(0 2px 4px rgba(0,0,0,.4))}
+  #toast{position:fixed;top:30%;left:50%;transform:translate(-50%,-50%) scale(.9);z-index:20;background:rgba(255,248,231,.96);color:var(--brown);padding:14px 20px;border-radius:16px;font-weight:700;font-size:17px;opacity:0;transition:.25s;pointer-events:none;max-width:85vw;text-align:center}
+  #toast.show{opacity:1;transform:translate(-50%,-50%) scale(1)}
+</style>
+</head>
+<body>
+
+<video id="cam" playsinline muted autoplay></video>
+
+<a-scene embedded vr-mode-ui="enabled:false" keyboard-shortcuts="enterVR:false" device-orientation-permission-ui="enabled:false" renderer="alpha:true;antialias:true" loading-screen="enabled:false">
+  <a-assets>
+    <!-- 之後放 Meshy 的綿羊模型，例如：
+    <a-asset-item id="sheepModel" src="../models/sheep.glb"></a-asset-item> -->
+  </a-assets>
+  <a-entity id="cam3d" camera look-controls="magicWindowTrackingEnabled:true;touchEnabled:false" position="0 1.6 0">
+    <!-- 跟著鏡頭的毛線球（收集的羊毛會飛進來，球會越滾越大） -->
+    <a-entity id="ball" position="0.3 -0.4 -1" scale="0.5 0.5 0.5">
+      <a-sphere radius="0.07" color="#ead9b8"></a-sphere>
+      <a-torus radius="0.068" radius-tubular="0.006" rotation="0 0 30" color="#d9c39b"></a-torus>
+      <a-torus radius="0.068" radius-tubular="0.006" rotation="60 40 0" color="#d9c39b"></a-torus>
+      <a-torus radius="0.068" radius-tubular="0.006" rotation="-50 0 80" color="#d9c39b"></a-torus>
+    </a-entity>
+  </a-entity>
+  <a-entity id="world"></a-entity>
+  <a-entity light="type:ambient;intensity:0.8"></a-entity>
+  <a-entity light="type:directional;intensity:0.7" position="1 3 2"></a-entity>
+</a-scene>
+
+<!-- 1. GPS 等待 -->
+<section id="s-gps" class="screen active">
+  <div class="card">
+    <h1>第二關：綿羊區</h1>
+    <div class="muted">距離綿羊區還有</div>
+    <div class="big" id="dist">定位中…</div>
+    <div class="muted" id="acc"></div>
+    <p class="muted">走到綿羊區附近，關卡會自動開啟 🐑</p>
+    <button class="ghost" id="btn-sim">（測試用）模擬已抵達</button>
+  </div>
+</section>
+
+<!-- 2. 米米開場 -->
+<section id="s-intro" class="screen">
+  <div class="card">
+    <div class="mimi">🐿️</div>
+    <div class="bubble">
+      歡迎來到大草原！這裡住著<b>巴貝多黑腹綿羊</b>，<br>
+      牠們背部是淺褐色，胸口和肚子是黑色的喔～<br>
+      ① 用手指在<b>綿羊背上滑動</b>，剪下羊毛 ✂️<br>
+      ② <b>點一下或滑過</b>掉在地上的羊毛，<br>&nbsp;&nbsp;&nbsp;&nbsp;把它們捲成一顆<b>毛線球</b> 🧶<br>
+      收集全部 <b id="need">12</b> 撮羊毛就過關！
+    </div>
+    <button id="btn-start">開始剪羊毛！</button>
+    <p class="muted">會請求開啟相機與動作感測</p>
+  </div>
+</section>
+
+<!-- 3. AR HUD -->
+<div id="hud">
+  <div id="counter">🧶 <span id="got">0</span> / <span id="total">12</span>　✂️ <span id="cut">0</span></div>
+  <div id="hint">轉動手機找找綿羊</div>
+</div>
+<div id="scissors">✂️</div>
+
+<!-- 4. 過關 -->
+<section id="s-win" class="screen">
+  <div class="card">
+    <div class="mimi">🧶🐑🧶</div>
+    <h1>第二關完成！</h1>
+    <p>你捲出了一顆好大的毛線球～</p>
+    <div class="big">+<span id="reward">50</span> 飛牛幣</div>
+    <div class="muted">目前共有 <b id="coins">0</b> 飛牛幣</div>
+    <div class="fact">🐿️ <b>米米小知識</b><br>
+      巴貝多黑腹綿羊是「毛髮羊」，身上是短短的毛，不像一般綿羊有厚厚的羊毛。
+      天氣變熱時牠們會自己換毛，所以很耐熱，平常也不太需要剪毛喔！</div>
+    <button id="btn-back">回到地圖</button>
+  </div>
+</section>
+
+<div id="toast"></div>
+
+<script>
+/* ========= 設定（現場實測後修改） ========= */
+const CONFIG = {
+  // TODO：到飛牛牧場綿羊區用手機量實際座標再填入（目前為暫定值）
+  checkpoint: { lat: 24.4910, lng: 120.7250, radius: 30 },
+  sheepCount: 6,          // 綿羊數量
+  woolPerSheep: 8,        // 每隻羊身上幾撮羊毛（建議偶數，會排成兩排）
+  sheepDistance: [3.0, 4.5], // 綿羊離玩家的距離範圍（公尺）
+  spread: 360,            // 綿羊分布的角度範圍：360 = 圍繞玩家一整圈，要轉身找羊
+  reward: 50
+};
+
+const $ = s => document.querySelector(s);
+const scene=$('a-scene'), camEl=$('#cam3d'), world=$('#world'), ball=$('#ball');
+let running=false, collected=0, cutCount=0;
+const sheeps=[], pieces=[];
+const TOTAL = CONFIG.sheepCount*CONFIG.woolPerSheep;
+const tmp=new THREE.Vector3();
+
+/* ========= 共用工具 ========= */
+function show(name){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  $('#hud').classList.toggle('active', name==='ar');
+  if(name!=='ar') $('#s-'+name).classList.add('active');
+}
+let toastTimer;
+function toast(msg, ms=1600){
+  const t=$('#toast'); t.textContent=msg; t.classList.add('show');
+  clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.remove('show'), ms);
+}
+function hint(msg){ $('#hint').textContent=msg; }
+function tween(dur, fn, done){
+  const t0=performance.now();
+  (function f(now){ const p=Math.min(1,(now-t0)/dur); fn(p); p<1?requestAnimationFrame(f):done&&done(); })(t0);
+}
+
+/* ========= GPS 自動觸發 ========= */
+function distanceM(a,b){
+  const R=6371000, r=x=>x*Math.PI/180;
+  const dLat=r(b.lat-a.lat), dLng=r(b.lng-a.lng);
+  const h=Math.sin(dLat/2)**2+Math.cos(r(a.lat))*Math.cos(r(b.lat))*Math.sin(dLng/2)**2;
+  return 2*R*Math.asin(Math.sqrt(h));
+}
+let triggered=false, watchId=null;
+function startGPS(){
+  if(!('geolocation' in navigator)){ $('#dist').textContent='不支援定位'; return; }
+  watchId=navigator.geolocation.watchPosition(pos=>{
+    const d=distanceM({lat:pos.coords.latitude,lng:pos.coords.longitude}, CONFIG.checkpoint);
+    $('#dist').textContent=Math.round(d)+' 公尺';
+    $('#acc').textContent='GPS 精度 ±'+Math.round(pos.coords.accuracy)+' 公尺';
+    if(!triggered && d<=CONFIG.checkpoint.radius) arrive();
+  }, err=>{
+    $('#dist').textContent='無法定位';
+    $('#acc').textContent=err.message+'（請允許定位，且網址需為 https）';
+  }, {enableHighAccuracy:true, maximumAge:2000, timeout:15000});
+}
+function arrive(){
+  triggered=true;
+  if(watchId!==null) navigator.geolocation.clearWatch(watchId);
+  navigator.vibrate && navigator.vibrate([200,100,200]);
+  show('intro');
+}
+
+/* ========= 開始 AR ========= */
+async function startAR(){
+  try{
+    if(typeof DeviceOrientationEvent!=='undefined' && typeof DeviceOrientationEvent.requestPermission==='function'){
+      const r=await DeviceOrientationEvent.requestPermission();
+      if(r!=='granted') toast('沒有動作感測權限，畫面無法跟著手機轉動', 3000);
+    }
+  }catch(e){}
+  try{
+    const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}},audio:false});
+    const v=$('#cam'); v.srcObject=stream; await v.play();
+  }catch(e){ toast('無法開啟相機，先用無背景模式遊玩', 2500); }
+  show('ar');
+  buildLevel();
+  running=true;
+}
+
+/* ========= 模型（之後可換成 Meshy 的 glb） =========
+   綿羊身體沿著 X 軸，頭朝 +X；整隻羊側身面對玩家，方便剪背上的毛 */
+const BROWN='#b98a5e', BLACK='#1f1b18', WOOL='#ead9b8';
+function makeSheepBody(){
+  const b=document.createElement('a-entity');
+  // 換成 Meshy 模型時：b.setAttribute('gltf-model','#sheepModel'); 並刪掉下面 innerHTML（羊毛撮仍由程式加在背上）
+  b.innerHTML=`
+    <a-sphere radius="0.4" scale="1.4 0.85 0.9" position="0 0.75 0" color="${BROWN}"></a-sphere>
+    <a-sphere radius="0.38" scale="1.25 0.6 0.85" position="0 0.58 0" color="${BLACK}"></a-sphere>
+    <a-sphere radius="0.24" position="0.42 0.64 0" color="${BLACK}"></a-sphere>
+    <a-sphere radius="0.18" scale="1.3 0.9 0.85" position="0.68 1.0 0" color="${BROWN}"></a-sphere>
+    <a-sphere radius="0.1" position="0.86 0.93 0" color="${BLACK}"></a-sphere>
+    <a-sphere radius="0.03" position="0.76 1.06 0.13" color="#111"></a-sphere>
+    <a-sphere radius="0.03" position="0.76 1.06 -0.13" color="#111"></a-sphere>
+    <a-sphere radius="0.07" scale="0.6 0.35 1.7" position="0.62 1.06 0.2" color="${BROWN}"></a-sphere>
+    <a-sphere radius="0.07" scale="0.6 0.35 1.7" position="0.62 1.06 -0.2" color="${BROWN}"></a-sphere>
+    <a-cylinder radius="0.05" height="0.45" position="0.3 0.225 0.17" color="${BLACK}"></a-cylinder>
+    <a-cylinder radius="0.05" height="0.45" position="0.3 0.225 -0.17" color="${BLACK}"></a-cylinder>
+    <a-cylinder radius="0.05" height="0.45" position="-0.3 0.225 0.17" color="${BLACK}"></a-cylinder>
+    <a-cylinder radius="0.05" height="0.45" position="-0.3 0.225 -0.17" color="${BLACK}"></a-cylinder>
+    <a-sphere radius="0.07" position="-0.56 0.82 0" color="${BROWN}"></a-sphere>`
+    .replaceAll('<a-sphere ','<a-sphere segments-width="18" segments-height="12" ');
+  return b;
+}
+function makeWoolTuft(){
+  const w=document.createElement('a-entity');
+  const seg='segments-width="10" segments-height="7"';   // 降低面數，6 隻羊在手機上才不會卡
+  w.innerHTML=`
+    <a-sphere radius="0.12" ${seg} color="${WOOL}"></a-sphere>
+    <a-sphere radius="0.09" ${seg} position="0.09 0.03 0.04" color="${WOOL}"></a-sphere>
+    <a-sphere radius="0.09" ${seg} position="-0.08 0.02 -0.05" color="${WOOL}"></a-sphere>
+    <a-sphere radius="0.08" ${seg} position="0.01 0.07 -0.06" color="#f3e6cc"></a-sphere>`;
+  return w;
+}
+
+function buildLevel(){
+  world.innerHTML=''; sheeps.length=0; pieces.length=0; collected=0; cutCount=0;
+  $('#total').textContent=TOTAL; $('#got').textContent=0; $('#cut').textContent=0;
+  for(let i=0;i<CONFIG.sheepCount;i++){
+    // 綿羊平均分布在 spread 角度範圍內，以正前方為中心
+    const deg = (i-(CONFIG.sheepCount-1)/2)*(CONFIG.spread/CONFIG.sheepCount) + (Math.random()-.5)*12;
+    const ang = THREE.MathUtils.degToRad(deg);
+    const dist = CONFIG.sheepDistance[0] + Math.random()*(CONFIG.sheepDistance[1]-CONFIG.sheepDistance[0]);
+    const x=Math.sin(ang)*dist, z=-Math.cos(ang)*dist;
+
+    const pivot=document.createElement('a-entity');   // 固定在家的位置，讓 +Z 朝向玩家
+    pivot.setAttribute('position',`${x} 0 ${z}`);
+    pivot.setAttribute('rotation',`0 ${THREE.MathUtils.radToDeg(Math.atan2(-x,-z))} 0`);
+    const mover=document.createElement('a-entity');   // 會左右散步的那一層
+    const body=makeSheepBody();
+    mover.appendChild(body);
+
+    const sheep={pivot, mover, body, wools:[], remaining:CONFIG.woolPerSheep, phase:Math.random()*10, hopAt:-1e9};
+    body.__sheep=sheep;
+
+    // 羊毛排成兩排鋪滿背部和側面
+    const cols=Math.ceil(CONFIG.woolPerSheep/2);
+    for(let k=0;k<CONFIG.woolPerSheep;k++){
+      const tuft=makeWoolTuft();
+      const col=Math.floor(k/2), side=(k%2===0)?1:-1;
+      const px=-0.42 + col*(0.84/(cols-1||1)) + (Math.random()-.5)*0.05;
+      const py=1.02 - Math.abs(px)*0.18 + (Math.random()-.5)*0.04;
+      const pz=side*0.13;
+      tuft.setAttribute('position',`${px} ${py} ${pz}`);
+      tuft.setAttribute('rotation',`${side*25} ${Math.random()*360} 0`);
+      const wool={el:tuft, sheep, state:'on'};
+      tuft.__wool=wool;
+      mover.appendChild(tuft);
+      sheep.wools.push(wool);
+    }
+    pivot.appendChild(mover);
+    world.appendChild(pivot);
+    sheeps.push(sheep);
+  }
+  hint(`你的四周有 ${CONFIG.sheepCount} 隻綿羊！轉身找找看，用手指在羊背上滑動剪毛 ✂️`);
+}
+
+/* ========= 動畫：綿羊散步、毛線球旋轉 ========= */
+function loop(now){
+  if(running){
+    sheeps.forEach(s=>{
+      const o=s.mover.object3D, k=now*0.00035+s.phase;
+      o.position.x=Math.sin(k)*0.35;                      // 左右散步
+      o.rotation.y=Math.cos(k)>=0?0:Math.PI;              // 走的方向轉身
+      const hop=Math.max(0,1-(now-s.hopAt)/400);          // 被剪毛時跳一下
+      o.position.y=Math.abs(Math.sin(now*0.006+s.phase))*0.02 + Math.sin(hop*Math.PI)*0.18;
+    });
+    ball.object3D.rotation.y+=0.01; ball.object3D.rotation.x+=0.006;
+  }
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+/* ========= 點擊判定（射線） ========= */
+const raycaster=new THREE.Raycaster(), ndc=new THREE.Vector2();
+function pick(cx,cy){
+  const cam=camEl.getObject3D('camera'); if(!cam) return null;
+  ndc.set(cx/innerWidth*2-1, -(cy/innerHeight)*2+1);
+  raycaster.setFromCamera(ndc,cam);
+  const hits=raycaster.intersectObject(world.object3D,true);
+  for(const h of hits){
+    let o=h.object;
+    while(o){
+      const el=o.el;
+      if(el){
+        if(el.__wool){ if(el.__wool.state==='on') return {type:'wool',ref:el.__wool,point:h.point}; break; }
+        if(el.__piece){ if(el.__piece.state==='ground') return {type:'piece',ref:el.__piece,point:h.point}; break; }
+        if(el.__sheep) return {type:'sheep',ref:el.__sheep,point:h.point};
+      }
+      o=o.parent;
+    }
+  }
+  return null;
+}
+function handleHit(hit){
+  if(!hit) return;
+  if(hit.type==='wool') shear(hit.ref);
+  else if(hit.type==='piece') collect(hit.ref);
+  else if(hit.type==='sheep'){
+    // 手指滑過羊身時，剪掉離手指最近的那撮
+    let best=null, bd=0.4;
+    hit.ref.wools.forEach(w=>{
+      if(w.state!=='on') return;
+      w.el.object3D.getWorldPosition(tmp);
+      const d=tmp.distanceTo(hit.point); if(d<bd){bd=d;best=w;}
+    });
+    if(best) shear(best);
+  }
+}
+
+/* ========= 剪羊毛 ========= */
+function shear(w){
+  w.state='cut';
+  w.el.object3D.getWorldPosition(tmp);
+  const from=tmp.clone();
+  w.el.object3D.visible=false;
+  const s=w.sheep; s.remaining--; s.hopAt=performance.now();
+  cutCount++; $('#cut').textContent=cutCount;
+  navigator.vibrate && navigator.vibrate(30);
+
+  // 掉到地上的羊毛
+  const el=makeWoolTuft();
+  el.setAttribute('position',`${from.x} ${from.y} ${from.z}`);
+  const p={el, state:'falling'}; el.__piece=p;
+  world.appendChild(el); pieces.push(p);
+  const to=from.clone().add(new THREE.Vector3((Math.random()-.5)*0.9,0,(Math.random()-.5)*0.9)); to.y=0.08;
+  tween(700, q=>{
+    const o=el.object3D;
+    o.position.x=from.x+(to.x-from.x)*q;
+    o.position.z=from.z+(to.z-from.z)*q;
+    o.position.y=from.y+(to.y-from.y)*q*q+Math.sin(q*Math.PI)*0.25;
+    o.rotation.z=q*3;
+  }, ()=>{ p.state='ground'; });
+
+  if(s.remaining===0) toast('這隻綿羊清爽多了！咩～ 🐑');
+  hint('點一下或滑過地上的羊毛，把它捲進毛線球 🧶');
+}
+
+/* ========= 收集羊毛 → 毛線球 ========= */
+function collect(p){
+  p.state='flying';
+  const o=p.el.object3D, from=o.position.clone(), tgt=new THREE.Vector3();
+  tween(450, q=>{
+    ball.object3D.getWorldPosition(tgt); world.object3D.worldToLocal(tgt);
+    o.position.lerpVectors(from,tgt,q);
+    const sc=1-q*0.7; o.scale.set(sc,sc,sc);
+  }, ()=>{
+    p.state='done';
+    p.el.parentNode && p.el.parentNode.removeChild(p.el);
+    collected++; $('#got').textContent=collected;
+    growBall();
+    if(collected>=TOTAL){ running=false; toast('毛線球完成了！🧶'); setTimeout(win,1300); }
+    else if(!pieces.some(x=>x.state==='ground'||x.state==='falling')) hint('繼續剪其他綿羊背上的羊毛 ✂️');
+  });
+}
+function growBall(){
+  const target=0.5+collected*(1.5/TOTAL);           // 從 0.5 倍長到 2 倍
+  const start=ball.object3D.scale.x;
+  tween(300, q=>{
+    const s=start+(target-start)*q + Math.sin(q*Math.PI)*0.25; // 收到時彈一下
+    ball.object3D.scale.set(s,s,s);
+  });
+}
+
+/* ========= 手勢：滑動剪毛 / 點擊收集 ========= */
+const scissors=$('#scissors');
+function scissorsAt(x,y){ scissors.style.display='block'; scissors.style.left=x+'px'; scissors.style.top=y+'px'; }
+function scissorsHide(){ scissors.style.display='none'; }
+
+let dragging=false, lastTouch=0;
+// 手機：手指滑到哪就判定到哪
+window.addEventListener('touchstart',e=>{
+  if(!running) return; lastTouch=performance.now();
+  for(const t of e.changedTouches){ scissorsAt(t.clientX,t.clientY); handleHit(pick(t.clientX,t.clientY)); }
+},{passive:true});
+window.addEventListener('touchmove',e=>{
+  if(!running) return;
+  for(const t of e.changedTouches){ scissorsAt(t.clientX,t.clientY); handleHit(pick(t.clientX,t.clientY)); }
+},{passive:true});
+window.addEventListener('touchend',()=>{ lastTouch=performance.now(); scissorsHide(); },{passive:true});
+
+// 電腦測試：按在羊或羊毛上拖曳 = 剪毛；按在空白處拖曳 = 轉視角
+window.addEventListener('mousedown',e=>{
+  if(!running || performance.now()-lastTouch<800) return;
+  const h=pick(e.clientX,e.clientY);
+  if(h){ dragging=true; e.stopPropagation(); scissorsAt(e.clientX,e.clientY); handleHit(h); }
+},true);
+window.addEventListener('mousemove',e=>{
+  if(!dragging) return;
+  scissorsAt(e.clientX,e.clientY); handleHit(pick(e.clientX,e.clientY));
+});
+window.addEventListener('mouseup',()=>{ dragging=false; scissorsHide(); });
+
+/* ========= 過關 ========= */
+function win(){
+  let coins=0;
+  try{ coins=(parseInt(localStorage.getItem('feiniu_coins'))||0)+CONFIG.reward; localStorage.setItem('feiniu_coins',coins);
+       localStorage.setItem('feiniu_level2_done','1'); }catch(e){ coins=CONFIG.reward; }
+  $('#reward').textContent=CONFIG.reward; $('#coins').textContent=coins;
+  try{ window.parent.postMessage({type:'LEVEL_COMPLETE', level:2, reward:CONFIG.reward},'*'); }catch(e){}
+  const v=$('#cam'); v.srcObject && v.srcObject.getTracks().forEach(t=>t.stop());
+  show('win');
+}
+
+/* ========= 綁定 ========= */
+$('#need').textContent=TOTAL;
+$('#btn-sim').onclick=arrive;
+$('#btn-start').onclick=startAR;
+$('#btn-back').onclick=()=>{ location.href='../index.html'; };
+startGPS();
+</script>
+</body>
+</html>
