@@ -1,0 +1,347 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>第一關｜兔兔找找看</title>
+<script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+<style>
+  :root{--green:#3f7d3a;--cream:#fff8e7;--brown:#6b4423;--orange:#f08a24;}
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%;overflow:hidden;background:#2f4a2a;font-family:"PingFang TC","Noto Sans TC",system-ui,sans-serif;color:#222}
+  #cam{position:fixed;inset:0;width:100%;height:100%;object-fit:cover;z-index:0}
+  a-scene{position:fixed!important;inset:0;width:100%!important;height:100%!important;z-index:1}
+
+  .screen{position:fixed;inset:0;z-index:10;display:none;flex-direction:column;align-items:center;justify-content:center;padding:24px;text-align:center;background:linear-gradient(#bfe3a8,#7cc06a)}
+  .screen.active{display:flex}
+  .card{background:var(--cream);border-radius:20px;padding:22px 20px;max-width:360px;width:100%;box-shadow:0 8px 24px rgba(0,0,0,.18)}
+  h1{margin:0 0 6px;font-size:22px;color:var(--brown)}
+  .big{font-size:42px;font-weight:800;color:var(--green);margin:10px 0}
+  .muted{color:#666;font-size:14px}
+  button{border:0;border-radius:999px;padding:14px 26px;font-size:17px;font-weight:700;background:var(--orange);color:#fff;margin-top:14px;cursor:pointer}
+  button.ghost{background:transparent;color:var(--brown);border:2px dashed var(--brown);font-size:13px;padding:8px 14px}
+  .mimi{font-size:64px}
+  .bubble{background:#fff;border-radius:16px;padding:14px;margin-top:8px;text-align:left;line-height:1.6;position:relative}
+
+  /* AR HUD */
+  #hud{position:fixed;inset:0;z-index:5;pointer-events:none;display:none}
+  #hud.active{display:block}
+  #counter{position:absolute;top:calc(14px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);background:rgba(255,248,231,.92);padding:8px 18px;border-radius:999px;font-weight:800;font-size:18px;color:var(--brown)}
+  #reticle{position:absolute;left:50%;top:50%;width:56px;height:56px;margin:-28px 0 0 -28px;border-radius:50%;
+    background:conic-gradient(var(--orange) calc(var(--p,0)*360deg),rgba(255,255,255,.35) 0);
+    -webkit-mask:radial-gradient(circle,transparent 21px,#000 22px);mask:radial-gradient(circle,transparent 21px,#000 22px)}
+  #reticle::after{content:"";position:absolute;left:50%;top:50%;width:6px;height:6px;margin:-3px;border-radius:50%;background:#fff}
+  #btn-carrot{position:absolute;left:50%;bottom:calc(96px + env(safe-area-inset-bottom));transform:translateX(-50%);pointer-events:auto;margin:0;box-shadow:0 4px 14px rgba(0,0,0,.3)}
+  #hint{position:absolute;bottom:calc(28px + env(safe-area-inset-bottom));left:16px;right:16px;text-align:center;background:rgba(0,0,0,.55);color:#fff;padding:12px;border-radius:14px;font-size:15px}
+  #toast{position:fixed;top:30%;left:50%;transform:translate(-50%,-50%) scale(.9);z-index:20;background:rgba(255,248,231,.96);color:var(--brown);padding:14px 20px;border-radius:16px;font-weight:700;font-size:17px;opacity:0;transition:.25s;pointer-events:none;max-width:85vw;text-align:center}
+  #toast.show{opacity:1;transform:translate(-50%,-50%) scale(1)}
+</style>
+</head>
+<body>
+
+<video id="cam" playsinline muted autoplay></video>
+
+<!-- 3D 場景（相機畫面在後面，場景背景透明 = 疊加式 AR） -->
+<a-scene embedded vr-mode-ui="enabled:false" keyboard-shortcuts="enterVR:false" device-orientation-permission-ui="enabled:false" renderer="alpha:true;antialias:true" loading-screen="enabled:false">
+  <a-assets>
+    <!-- 之後把 Meshy 匯出的 glb 放這裡，例如：
+    <a-asset-item id="rabbitModel" src="models/rabbit.glb"></a-asset-item> -->
+  </a-assets>
+  <a-entity id="cam3d" camera look-controls="magicWindowTrackingEnabled:true;touchEnabled:false" position="0 1.6 0"></a-entity>
+  <a-entity id="world"></a-entity>
+  <a-entity light="type:ambient;intensity:0.8"></a-entity>
+  <a-entity light="type:directional;intensity:0.7" position="1 3 2"></a-entity>
+</a-scene>
+
+<!-- 1. GPS 等待畫面 -->
+<section id="s-gps" class="screen active">
+  <div class="card">
+    <h1>第一關：兔子區</h1>
+    <div class="muted">距離兔子區還有</div>
+    <div class="big" id="dist">定位中…</div>
+    <div class="muted" id="acc"></div>
+    <p class="muted">走到兔子區附近，關卡會自動開啟 🐰</p>
+    <button class="ghost" id="btn-sim">（測試用）模擬已抵達</button>
+  </div>
+</section>
+
+<!-- 2. 米米開場 -->
+<section id="s-intro" class="screen">
+  <div class="card">
+    <div class="mimi">🐿️</div>
+    <div class="bubble">
+      嗨！我是導遊<b>松鼠米米</b>～<br>
+      兔子區的兔兔們都躲進洞裡了！<br>
+      ① 轉動手機，把<b>準心對準兔子洞</b>看一下<br>
+      ② 找到兔兔後，<b>往上滑</b>丟胡蘿蔔餵牠 🥕<br>
+      餵飽 <b id="need">3</b> 隻兔兔就過關囉！
+    </div>
+    <button id="btn-start">開始找兔兔！</button>
+    <p class="muted">會請求開啟相機與動作感測</p>
+  </div>
+</section>
+
+<!-- 3. AR HUD -->
+<div id="hud">
+  <div id="counter">🐰 <span id="fed">0</span> / <span id="total">3</span></div>
+  <div id="reticle"></div>
+  <button id="btn-carrot">🥕 丟胡蘿蔔</button>
+  <div id="hint">轉動手機找找看地上的兔子洞</div>
+</div>
+
+<!-- 4. 過關 -->
+<section id="s-win" class="screen">
+  <div class="card">
+    <div class="mimi">🎉🐰🎉</div>
+    <h1>第一關完成！</h1>
+    <p>兔兔們都吃飽了，謝謝你～</p>
+    <div class="big">+<span id="reward">50</span> 飛牛幣</div>
+    <div class="muted">目前共有 <b id="coins">0</b> 飛牛幣</div>
+    <button id="btn-back">回到地圖</button>
+  </div>
+</section>
+
+<div id="toast"></div>
+
+<script>
+/* ========= 設定（現場實測後修改） ========= */
+const CONFIG = {
+  // TODO：到飛牛牧場兔子區用手機量實際座標再填入（目前為暫定值）
+  checkpoint: { lat: 24.4905, lng: 120.7245, radius: 25 }, // radius：公尺，GPS 誤差約 5~15m，建議 20~30
+  holeCount: 6,        // 兔子洞數量
+  rabbitCount: 3,      // 其中有兔子的洞
+  holeDistance: 2.6,   // 洞離玩家距離（公尺）
+  gazeAngle: 12,       // 準心離洞幾度內算「看著」
+  gazeTime: 800,       // 看多久（毫秒）會揭曉
+  feedAngle: 22,       // 丟胡蘿蔔時兔子要在幾度內才算丟中
+  reward: 50
+};
+
+const $ = s => document.querySelector(s);
+const scene = $('a-scene'), camEl = $('#cam3d'), world = $('#world');
+let running = false, fedCount = 0;
+const holes = [];
+
+/* ========= 畫面切換 / 提示 ========= */
+function show(name){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  $('#hud').classList.toggle('active', name==='ar');
+  if(name!=='ar') $('#s-'+name).classList.add('active');
+}
+let toastTimer;
+function toast(msg, ms=1800){
+  const t=$('#toast'); t.textContent=msg; t.classList.add('show');
+  clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.remove('show'), ms);
+}
+function hint(msg){ $('#hint').textContent=msg; }
+function tween(dur, fn, done){
+  const t0=performance.now();
+  (function f(now){ const p=Math.min(1,(now-t0)/dur); fn(p); p<1?requestAnimationFrame(f):done&&done(); })(t0);
+}
+
+/* ========= GPS 自動觸發 ========= */
+function distanceM(a,b){
+  const R=6371000, r=x=>x*Math.PI/180;
+  const dLat=r(b.lat-a.lat), dLng=r(b.lng-a.lng);
+  const h=Math.sin(dLat/2)**2+Math.cos(r(a.lat))*Math.cos(r(b.lat))*Math.sin(dLng/2)**2;
+  return 2*R*Math.asin(Math.sqrt(h));
+}
+let triggered=false, watchId=null;
+function startGPS(){
+  if(!('geolocation' in navigator)){ $('#dist').textContent='不支援定位'; return; }
+  watchId=navigator.geolocation.watchPosition(pos=>{
+    const d=distanceM({lat:pos.coords.latitude,lng:pos.coords.longitude}, CONFIG.checkpoint);
+    $('#dist').textContent=Math.round(d)+' 公尺';
+    $('#acc').textContent='GPS 精度 ±'+Math.round(pos.coords.accuracy)+' 公尺';
+    if(!triggered && d<=CONFIG.checkpoint.radius) arrive();
+  }, err=>{
+    $('#dist').textContent='無法定位';
+    $('#acc').textContent=err.message+'（請允許定位，且網址需為 https）';
+  }, {enableHighAccuracy:true, maximumAge:2000, timeout:15000});
+}
+function arrive(){
+  triggered=true;
+  if(watchId!==null) navigator.geolocation.clearWatch(watchId);
+  navigator.vibrate && navigator.vibrate([200,100,200]);
+  show('intro');
+}
+
+/* ========= 開始 AR：相機 + 陀螺儀權限 ========= */
+async function startAR(){
+  // iOS 必須在按鈕點擊當下請求動作感測權限
+  try{
+    if(typeof DeviceOrientationEvent!=='undefined' && typeof DeviceOrientationEvent.requestPermission==='function'){
+      const r=await DeviceOrientationEvent.requestPermission();
+      if(r!=='granted') toast('沒有動作感測權限，畫面無法跟著手機轉動', 3000);
+    }
+  }catch(e){}
+  try{
+    const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}},audio:false});
+    const v=$('#cam'); v.srcObject=stream; await v.play();
+  }catch(e){ toast('無法開啟相機，先用無背景模式遊玩', 2500); }
+  show('ar');
+  buildLevel();
+  running=true;
+}
+
+/* ========= 建立模型（之後可換成 Meshy 的 glb） ========= */
+function makeRabbit(){
+  const r=document.createElement('a-entity');
+  // 換成 Meshy 模型時，改成：r.setAttribute('gltf-model','#rabbitModel'); 並刪掉下面 innerHTML
+  r.innerHTML=`
+    <a-sphere radius="0.28" scale="1 0.9 1.1" position="0 0.28 0" color="#fafafa"></a-sphere>
+    <a-sphere radius="0.2" position="0 0.62 0.12" color="#fafafa"></a-sphere>
+    <a-sphere radius="0.07" scale="0.8 3 0.5" position="-0.08 0.92 0.08" color="#fafafa"></a-sphere>
+    <a-sphere radius="0.07" scale="0.8 3 0.5" position="0.08 0.92 0.08" color="#fafafa"></a-sphere>
+    <a-sphere radius="0.045" scale="0.6 2.6 0.3" position="-0.08 0.92 0.115" color="#f6b6c8"></a-sphere>
+    <a-sphere radius="0.045" scale="0.6 2.6 0.3" position="0.08 0.92 0.115" color="#f6b6c8"></a-sphere>
+    <a-sphere radius="0.03" position="-0.08 0.67 0.3" color="#222"></a-sphere>
+    <a-sphere radius="0.03" position="0.08 0.67 0.3" color="#222"></a-sphere>
+    <a-sphere radius="0.025" position="0 0.6 0.32" color="#f08aa6"></a-sphere>
+    <a-sphere radius="0.08" position="0 0.3 -0.3" color="#ffffff"></a-sphere>`;
+  return r;
+}
+function makeCarrot(){
+  const c=document.createElement('a-entity');
+  c.innerHTML=`
+    <a-cone radius-bottom="0.06" radius-top="0.005" height="0.3" rotation="180 0 0" color="#f08a24"></a-cone>
+    <a-cylinder radius="0.035" height="0.1" position="0 0.19 0" color="#4caf50"></a-cylinder>`;
+  return c;
+}
+
+function buildLevel(){
+  world.innerHTML=''; holes.length=0; fedCount=0;
+  $('#fed').textContent=0; $('#total').textContent=CONFIG.rabbitCount;
+  const withRabbit=[...Array(CONFIG.holeCount).keys()].sort(()=>Math.random()-.5).slice(0,CONFIG.rabbitCount);
+  for(let i=0;i<CONFIG.holeCount;i++){
+    const ang=(i/CONFIG.holeCount)*Math.PI*2+(Math.random()-.5)*0.4;
+    const x=Math.sin(ang)*CONFIG.holeDistance, z=-Math.cos(ang)*CONFIG.holeDistance;
+    const el=document.createElement('a-entity');
+    el.setAttribute('position',`${x} 0 ${z}`);
+    el.setAttribute('rotation',`0 ${THREE.MathUtils.radToDeg(Math.atan2(-x,-z))} 0`); // 讓兔子面向玩家
+    el.innerHTML=`
+      <a-circle class="pit" radius="0.45" rotation="-90 0 0" color="#3b2a1a"></a-circle>
+      <a-ring radius-inner="0.45" radius-outer="0.62" rotation="-90 0 0" position="0 0.01 0" color="#8a6a40"></a-ring>`;
+    const hole={el, rabbit:null, hasRabbit:withRabbit.includes(i), state:'hidden', gaze:0};
+    if(hole.hasRabbit){
+      hole.rabbit=makeRabbit();
+      el.appendChild(hole.rabbit);
+      hole.rabbit.addEventListener('loaded',()=>{ hole.rabbit.object3D.position.y=-1; hole.rabbit.object3D.visible=false; });
+    }
+    world.appendChild(el);
+    holes.push(hole);
+  }
+  hint('轉動手機找找看地上的兔子洞，把準心對準洞口');
+}
+
+/* ========= 視線判定 ========= */
+const fwd=new THREE.Vector3(), camPos=new THREE.Vector3(), tmp=new THREE.Vector3();
+function updateCamVectors(){
+  const c=camEl.getObject3D('camera'); if(!c) return false;
+  c.getWorldDirection(fwd); c.getWorldPosition(camPos); return true;
+}
+function viewAngle(obj3d, yOff=0){
+  obj3d.getWorldPosition(tmp); tmp.y+=yOff; tmp.sub(camPos).normalize();
+  return THREE.MathUtils.radToDeg(fwd.angleTo(tmp));
+}
+function setRing(p){ $('#reticle').style.setProperty('--p', Math.max(0,Math.min(1,p))); }
+
+let last=performance.now();
+function loop(now){
+  const dt=now-last; last=now;
+  if(running && updateCamVectors()){
+    let best=null, bestA=999;
+    holes.forEach(h=>{ if(h.state!=='hidden') return; const a=viewAngle(h.el.object3D); if(a<bestA){bestA=a;best=h;} });
+    holes.forEach(h=>{ if(h!==best) h.gaze=0; });
+    if(best && bestA<CONFIG.gazeAngle){
+      best.gaze+=dt; setRing(best.gaze/CONFIG.gazeTime);
+      if(best.gaze>=CONFIG.gazeTime){ setRing(0); reveal(best); }
+    } else setRing(0);
+    // 等待餵食的兔兔輕輕晃動
+    holes.forEach(h=>{ if(h.state==='hungry') h.rabbit.object3D.rotation.z=Math.sin(now/250)*0.08; });
+  }
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+/* ========= 揭曉兔子洞 ========= */
+function reveal(h){
+  navigator.vibrate && navigator.vibrate(60);
+  if(h.hasRabbit){
+    h.state='hungry';
+    const o=h.rabbit.object3D; o.visible=true;
+    tween(450, p=>{ const e=1-Math.pow(1-p,3); o.position.y=-1+e*1.08; }, ()=>tween(150,p=>{o.position.y=0.08-0.08*p;}));
+    toast('找到兔兔了！🐰');
+    hint('往上滑動，把胡蘿蔔丟給兔兔 🥕');
+  }else{
+    h.state='empty';
+    h.el.querySelector('.pit').setAttribute('color','#7a6a55');
+    toast('這個洞是空的…再找找別的洞');
+  }
+}
+
+/* ========= 滑動丟胡蘿蔔 ========= */
+function throwCarrot(){
+  if(!running || !updateCamVectors()) return;
+  let target=null, bestA=999;
+  holes.forEach(h=>{ if(h.state!=='hungry') return; const a=viewAngle(h.rabbit.object3D,0.5); if(a<bestA){bestA=a;target=h;} });
+  const hit = target && bestA<CONFIG.feedAngle;
+
+  const start=camPos.clone().add(fwd.clone().multiplyScalar(0.5)); start.y-=0.3;
+  const end=new THREE.Vector3();
+  if(hit){ target.rabbit.object3D.getWorldPosition(end); end.y+=0.55; target.state='feeding'; }
+  else { end.copy(camPos).add(fwd.clone().multiplyScalar(3)); end.y=Math.max(0,end.y); }
+
+  const carrot=makeCarrot(); scene.appendChild(carrot);
+  carrot.object3D.position.copy(start);
+  tween(500, p=>{
+    carrot.object3D.position.lerpVectors(start,end,p);
+    carrot.object3D.position.y+=Math.sin(p*Math.PI)*0.5;
+    carrot.object3D.rotation.x=p*Math.PI*4;
+  }, ()=>{
+    carrot.parentNode && carrot.parentNode.removeChild(carrot);
+    if(hit) fed(target); else toast(holes.some(h=>h.state==='hungry')?'沒丟中～對準兔兔再試一次':'先找到兔兔再餵牠喔');
+  });
+}
+function fed(h){
+  h.state='fed'; fedCount++;
+  $('#fed').textContent=fedCount;
+  navigator.vibrate && navigator.vibrate([40,40,40]);
+  toast('兔兔吃得好開心 ❤️');
+  const o=h.rabbit.object3D; o.rotation.z=0;
+  tween(900, p=>{ o.position.y=Math.abs(Math.sin(p*Math.PI*3))*0.3; });
+  if(fedCount>=CONFIG.rabbitCount){ running=false; setTimeout(win,1300); }
+  else hint(`還有 ${CONFIG.rabbitCount-fedCount} 隻兔兔在等你，繼續找！`);
+}
+
+let ty=0, tt=0;
+window.addEventListener('touchstart',e=>{ ty=e.touches[0].clientY; tt=performance.now(); },{passive:true});
+window.addEventListener('touchend',e=>{
+  const dy=e.changedTouches[0].clientY-ty;
+  if(dy<-50 && performance.now()-tt<700) throwCarrot();
+},{passive:true});
+// 電腦測試用：滑鼠拖曳轉視角，按 F 或空白鍵丟
+window.addEventListener('keydown',e=>{ if(e.key==='f'||e.key==='F'||e.code==='Space'){ e.preventDefault(); throwCarrot(); } });
+$('#btn-carrot').addEventListener('click',e=>{ e.stopPropagation(); throwCarrot(); });
+
+/* ========= 過關：發放飛牛幣 ========= */
+function win(){
+  let coins=0;
+  try{ coins=(parseInt(localStorage.getItem('feiniu_coins'))||0)+CONFIG.reward; localStorage.setItem('feiniu_coins',coins);
+       localStorage.setItem('feiniu_level1_done','1'); }catch(e){ coins=CONFIG.reward; }
+  $('#reward').textContent=CONFIG.reward; $('#coins').textContent=coins;
+  // 給整合用：主遊戲若用 iframe 載入本關，可監聽這個訊息
+  try{ window.parent.postMessage({type:'LEVEL_COMPLETE', level:1, reward:CONFIG.reward},'*'); }catch(e){}
+  const v=$('#cam'); v.srcObject && v.srcObject.getTracks().forEach(t=>t.stop());
+  show('win');
+}
+
+/* ========= 綁定 ========= */
+$('#need').textContent=CONFIG.rabbitCount;
+$('#btn-sim').onclick=arrive;
+$('#btn-start').onclick=startAR;
+$('#btn-back').onclick=()=>{ location.href='../index.html'; };
+startGPS();
+</script>
+</body>
+</html>
